@@ -9,6 +9,25 @@ param(
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Common")
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.VersionControl.Client")
 
+#$libBase = ".\tfslibs"
+
+# $dlls = @(
+#     "Microsoft.TeamFoundation.Common",
+#     "Microsoft.TeamFoundation.Client",
+#     "Microsoft.TeamFoundation.WorkItemTracking.Client",
+#     "Microsoft.TeamFoundation.VersionControl.Client"
+# )
+
+# foreach ($dll in $dlls) {
+#     $path = Get-ChildItem -Path $libBase -Filter "$dll.dll" -Recurse |
+#             Where-Object { $_.FullName -match "net45" } |
+#             Select-Object -First 1
+
+#     if ($path) {
+#         Add-Type -Path $path.FullName -ErrorAction SilentlyContinue
+#     }
+# }
+
 # ─── Helper: format bytes into human-readable size ────────────────────────────
 function Format-Bytes {
     param([long]$Bytes)
