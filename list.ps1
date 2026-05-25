@@ -47,11 +47,9 @@ foreach ($collection in $collections) {
                 LastUser            = "-"
                 LastUserDisplayName = "-"
                 LastUserMailAddress = "-"
-                LastUserUniqueName  = "-"
                 Members             = "-"
                 MembersDisplayName  = "-"
                 MembersMailAddress  = "-"
-                MembersUniqueName   = "-"
                 LatestVersionSize   = "-"
                 BiggestFileSize     = "-"
                 BiggestFile         = "-"
@@ -80,11 +78,9 @@ foreach ($collection in $collections) {
                 LastUser            = "-"
                 LastUserDisplayName = "-"
                 LastUserMailAddress = "-"
-                LastUserUniqueName  = "-"
                 Members             = "-"
                 MembersDisplayName  = "-"
                 MembersMailAddress  = "-"
-                MembersUniqueName   = "-"
                 LatestVersionSize   = "-"
                 BiggestFileSize     = "-"
                 BiggestFile         = "-"
@@ -93,19 +89,17 @@ foreach ($collection in $collections) {
         }
 
         foreach ($project in $projects) {
-            $projectPath        = "$/" + $project.Name
-            $lastCheckin        = "-"
-            $lastUser           = "-"
+            $projectPath         = "$/" + $project.Name
+            $lastCheckin         = "-"
+            $lastUser            = "-"
             $lastUserDisplayName = "-"
             $lastUserMailAddress = "-"
-            $lastUserUniqueName  = "-"
-            $members            = "-"
-            $membersDisplayName = "-"
-            $membersMailAddress = "-"
-            $membersUniqueName  = "-"
-            $latestVersionSize  = "-"
-            $biggestFileName    = "-"
-            $biggestFileSize    = "-"
+            $members             = "-"
+            $membersDisplayName  = "-"
+            $membersMailAddress  = "-"
+            $latestVersionSize   = "-"
+            $biggestFileName     = "-"
+            $biggestFileSize     = "-"
 
             Write-Host "  -> $($project.Name)" -ForegroundColor Gray
 
@@ -127,7 +121,7 @@ foreach ($collection in $collections) {
                     $lastUser            = $latestChangeset.Committer
                     $lastUserDisplayName = $latestChangeset.CommitterDisplayName
 
-                    # Resolve mail and unique name via identity lookup
+                    # Resolve mail address via identity lookup
                     $committerIdentity = $securityService.ReadIdentity(
                         [Microsoft.TeamFoundation.Server.SearchFactor]::AccountName,
                         $latestChangeset.Committer,
@@ -135,7 +129,6 @@ foreach ($collection in $collections) {
                     )
                     if ($committerIdentity) {
                         $lastUserMailAddress = $committerIdentity.MailAddress
-                        $lastUserUniqueName  = $committerIdentity.UniqueName
                     }
                 }
             }
@@ -144,7 +137,6 @@ foreach ($collection in $collections) {
                 $lastUser            = "Error"
                 $lastUserDisplayName = "Error"
                 $lastUserMailAddress = "Error"
-                $lastUserUniqueName  = "Error"
             }
 
             # ── Project members ────────────────────────────────────────────────
@@ -153,7 +145,6 @@ foreach ($collection in $collections) {
                 $allAccountNames  = @()
                 $allDisplayNames  = @()
                 $allMailAddresses = @()
-                $allUniqueNames   = @()
 
                 foreach ($group in $appGroups) {
                     $groupIdentity = $securityService.ReadIdentity(
@@ -173,7 +164,6 @@ foreach ($collection in $collections) {
                             $allAccountNames  += "$prefix $($member.AccountName)"
                             $allDisplayNames  += "$prefix $($member.DisplayName)"
                             $allMailAddresses += "$prefix $($member.MailAddress)"
-                            $allUniqueNames   += "$prefix $($member.UniqueName)"
                         }
                     }
                 }
@@ -181,13 +171,11 @@ foreach ($collection in $collections) {
                 $members            = if ($allAccountNames.Count  -gt 0) { ($allAccountNames  | Sort-Object -Unique) -join ", " } else { "(none)" }
                 $membersDisplayName = if ($allDisplayNames.Count  -gt 0) { ($allDisplayNames  | Sort-Object -Unique) -join ", " } else { "(none)" }
                 $membersMailAddress = if ($allMailAddresses.Count -gt 0) { ($allMailAddresses | Sort-Object -Unique) -join ", " } else { "(none)" }
-                $membersUniqueName  = if ($allUniqueNames.Count   -gt 0) { ($allUniqueNames   | Sort-Object -Unique) -join ", " } else { "(none)" }
             }
             catch {
                 $members            = "Error: $($_.Exception.Message)"
                 $membersDisplayName = "Error"
                 $membersMailAddress = "Error"
-                $membersUniqueName  = "Error"
             }
 
             # ── Project size + biggest file ────────────────────────────────────
@@ -233,11 +221,9 @@ foreach ($collection in $collections) {
                 LastUser            = $lastUser
                 LastUserDisplayName = $lastUserDisplayName
                 LastUserMailAddress = $lastUserMailAddress
-                LastUserUniqueName  = $lastUserUniqueName
                 Members             = $members
                 MembersDisplayName  = $membersDisplayName
                 MembersMailAddress  = $membersMailAddress
-                MembersUniqueName   = $membersUniqueName
                 LatestVersionSize   = $latestVersionSize
                 BiggestFileSize     = $biggestFileSize
                 BiggestFile         = $biggestFileName
@@ -254,11 +240,9 @@ foreach ($collection in $collections) {
             LastUser            = "-"
             LastUserDisplayName = "-"
             LastUserMailAddress = "-"
-            LastUserUniqueName  = "-"
             Members             = "-"
             MembersDisplayName  = "-"
             MembersMailAddress  = "-"
-            MembersUniqueName   = "-"
             LatestVersionSize   = "-"
             BiggestFileSize     = "-"
             BiggestFile         = "-"
@@ -269,7 +253,7 @@ foreach ($collection in $collections) {
 Write-Host "`nDone.`n" -ForegroundColor Green
 
 # ─── Display as table ──────────────────────────────────────────────────────────
-$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, LastUserUniqueName, Members, MembersDisplayName, MembersMailAddress, MembersUniqueName, LatestVersionSize, BiggestFileSize, BiggestFile
+$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, Members, MembersDisplayName, MembersMailAddress, LatestVersionSize, BiggestFileSize, BiggestFile
 
 # Optional: export to CSV
 # $results | Export-Csv -Path "C:\tfs_projects_report.csv" -NoTypeInformation -Encoding UTF8
