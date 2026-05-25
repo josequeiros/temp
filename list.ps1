@@ -1,6 +1,6 @@
 ﻿# ─── Parameters ───────────────────────────────────────────────────────────────
 param(
-    [string] $TfsServer = "",
+    [string] $TfsServer = "http://your-tfs-server:8080/tfs",
     [switch] $SkipSize
 )
 
@@ -8,25 +8,6 @@ param(
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Client")
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Common")
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.VersionControl.Client")
-
-#$libBase = ".\tfslibs"
-
-# $dlls = @(
-#     "Microsoft.TeamFoundation.Common",
-#     "Microsoft.TeamFoundation.Client",
-#     "Microsoft.TeamFoundation.WorkItemTracking.Client",
-#     "Microsoft.TeamFoundation.VersionControl.Client"
-# )
-
-# foreach ($dll in $dlls) {
-#     $path = Get-ChildItem -Path $libBase -Filter "$dll.dll" -Recurse |
-#             Where-Object { $_.FullName -match "net45" } |
-#             Select-Object -First 1
-
-#     if ($path) {
-#         Add-Type -Path $path.FullName -ErrorAction SilentlyContinue
-#     }
-# }
 
 # ─── Helper: format bytes into human-readable size ────────────────────────────
 function Format-Bytes {
@@ -58,15 +39,22 @@ foreach ($collection in $collections) {
     try {
         if ($collection.State -ne "Started") {
             $results += [PSCustomObject]@{
-                Collection        = $collection.Name
-                CollState         = $collection.State
-                Project           = "(Collection not started)"
-                ProjectState      = "-"
-                LastCheckin       = "-"
-                LastUser          = "-"
-                LatestVersionSize = "-"
-                BiggestFileSize   = "-"
-                BiggestFile       = "-"
+                Collection          = $collection.Name
+                CollState           = $collection.State
+                Project             = "(Collection not started)"
+                ProjectState        = "-"
+                LastCheckin         = "-"
+                LastUser            = "-"
+                LastUserDisplayName = "-"
+                LastUserMailAddress = "-"
+                LastUserUniqueName  = "-"
+                Members             = "-"
+                MembersDisplayName  = "-"
+                MembersMailAddress  = "-"
+                MembersUniqueName   = "-"
+                LatestVersionSize   = "-"
+                BiggestFileSize     = "-"
+                BiggestFile         = "-"
             }
             continue
         }
@@ -77,37 +65,51 @@ foreach ($collection in $collections) {
         $tfsCollection = [Microsoft.TeamFoundation.Client.TfsTeamProjectCollectionFactory]::GetTeamProjectCollection($collectionUri)
         $tfsCollection.Authenticate()
 
-        $cssService = $tfsCollection.GetService([Microsoft.TeamFoundation.Server.ICommonStructureService])
-        $projects = $cssService.ListAllProjects()
-
-        $vcs = $tfsCollection.GetService([Microsoft.TeamFoundation.VersionControl.Client.VersionControlServer])
+        $cssService      = $tfsCollection.GetService([Microsoft.TeamFoundation.Server.ICommonStructureService])
+        $projects        = $cssService.ListAllProjects()
+        $vcs             = $tfsCollection.GetService([Microsoft.TeamFoundation.VersionControl.Client.VersionControlServer])
+        $securityService = $tfsCollection.GetService([Microsoft.TeamFoundation.Server.IGroupSecurityService])
 
         if ($projects.Count -eq 0) {
             $results += [PSCustomObject]@{
-                Collection        = $collection.Name
-                CollState         = $collection.State
-                Project           = "(No projects found)"
-                ProjectState      = "-"
-                LastCheckin       = "-"
-                LastUser          = "-"
-                LatestVersionSize = "-"
-                BiggestFileSize   = "-"
-                BiggestFile       = "-"
+                Collection          = $collection.Name
+                CollState           = $collection.State
+                Project             = "(No projects found)"
+                ProjectState        = "-"
+                LastCheckin         = "-"
+                LastUser            = "-"
+                LastUserDisplayName = "-"
+                LastUserMailAddress = "-"
+                LastUserUniqueName  = "-"
+                Members             = "-"
+                MembersDisplayName  = "-"
+                MembersMailAddress  = "-"
+                MembersUniqueName   = "-"
+                LatestVersionSize   = "-"
+                BiggestFileSize     = "-"
+                BiggestFile         = "-"
             }
             continue
         }
 
         foreach ($project in $projects) {
-            $projectPath       = "$/" + $project.Name
-            $lastCheckin       = "-"
-            $lastUser          = "-"
-            $latestVersionSize = "-"
-            $biggestFileName   = "-"
-            $biggestFileSize   = "-"
+            $projectPath        = "$/" + $project.Name
+            $lastCheckin        = "-"
+            $lastUser           = "-"
+            $lastUserDisplayName = "-"
+            $lastUserMailAddress = "-"
+            $lastUserUniqueName  = "-"
+            $members            = "-"
+            $membersDisplayName = "-"
+            $membersMailAddress = "-"
+            $membersUniqueName  = "-"
+            $latestVersionSize  = "-"
+            $biggestFileName    = "-"
+            $biggestFileSize    = "-"
 
             Write-Host "  -> $($project.Name)" -ForegroundColor Gray
 
-            # ── Last check-in date + username ──────────────────────────────────
+            # ── Last check-in date + user info ─────────────────────────────────
             try {
                 $history = $vcs.QueryHistory(
                     $projectPath,
@@ -121,15 +123,71 @@ foreach ($collection in $collections) {
                 )
                 $latestChangeset = $history | Select-Object -First 1
                 if ($latestChangeset) {
-                    $lastCheckin = $latestChangeset.CreationDate.ToString("yyyy-MM-dd HH:mm")
-                    #$lastUser    = $latestChangeset.CommitterDisplayName  # e.g. "John Doe"
-                    # Alternative: $latestChangeset.Committer             # e.g. "DOMAIN\jdoe"
-                    $lastUser    = $latestChangeset.Committer
+                    $lastCheckin         = $latestChangeset.CreationDate.ToString("yyyy-MM-dd HH:mm")
+                    $lastUser            = $latestChangeset.Committer
+                    $lastUserDisplayName = $latestChangeset.CommitterDisplayName
+
+                    # Resolve mail and unique name via identity lookup
+                    $committerIdentity = $securityService.ReadIdentity(
+                        [Microsoft.TeamFoundation.Server.SearchFactor]::AccountName,
+                        $latestChangeset.Committer,
+                        [Microsoft.TeamFoundation.Server.QueryMembership]::None
+                    )
+                    if ($committerIdentity) {
+                        $lastUserMailAddress = $committerIdentity.MailAddress
+                        $lastUserUniqueName  = $committerIdentity.UniqueName
+                    }
                 }
             }
             catch {
-                $lastCheckin = "Error: $($_.Exception.Message)"
-                $lastUser    = "Error"
+                $lastCheckin         = "Error: $($_.Exception.Message)"
+                $lastUser            = "Error"
+                $lastUserDisplayName = "Error"
+                $lastUserMailAddress = "Error"
+                $lastUserUniqueName  = "Error"
+            }
+
+            # ── Project members ────────────────────────────────────────────────
+            try {
+                $appGroups        = $securityService.ListApplicationGroups($project.Uri)
+                $allAccountNames  = @()
+                $allDisplayNames  = @()
+                $allMailAddresses = @()
+                $allUniqueNames   = @()
+
+                foreach ($group in $appGroups) {
+                    $groupIdentity = $securityService.ReadIdentity(
+                        [Microsoft.TeamFoundation.Server.SearchFactor]::Sid,
+                        $group.Sid,
+                        [Microsoft.TeamFoundation.Server.QueryMembership]::Direct
+                    )
+
+                    foreach ($memberSid in $groupIdentity.Members) {
+                        $member = $securityService.ReadIdentity(
+                            [Microsoft.TeamFoundation.Server.SearchFactor]::Sid,
+                            $memberSid,
+                            [Microsoft.TeamFoundation.Server.QueryMembership]::None
+                        )
+                        if ($member) {
+                            $prefix = if ($member.SecurityGroup) { "[G]" } else { "[U]" }
+                            $allAccountNames  += "$prefix $($member.AccountName)"
+                            $allDisplayNames  += "$prefix $($member.DisplayName)"
+                            $allMailAddresses += "$prefix $($member.MailAddress)"
+                            $allUniqueNames   += "$prefix $($member.UniqueName)"
+                        }
+                    }
+                }
+
+                $members            = if ($allAccountNames.Count  -gt 0) { ($allAccountNames  | Sort-Object -Unique) -join ", " } else { "(none)" }
+                $membersDisplayName = if ($allDisplayNames.Count  -gt 0) { ($allDisplayNames  | Sort-Object -Unique) -join ", " } else { "(none)" }
+                $membersMailAddress = if ($allMailAddresses.Count -gt 0) { ($allMailAddresses | Sort-Object -Unique) -join ", " } else { "(none)" }
+                $membersUniqueName  = if ($allUniqueNames.Count   -gt 0) { ($allUniqueNames   | Sort-Object -Unique) -join ", " } else { "(none)" }
+            }
+            catch {
+                $members            = "Error: $($_.Exception.Message)"
+                $membersDisplayName = "Error"
+                $membersMailAddress = "Error"
+                $membersUniqueName  = "Error"
             }
 
             # ── Project size + biggest file ────────────────────────────────────
@@ -167,29 +225,43 @@ foreach ($collection in $collections) {
             }
 
             $results += [PSCustomObject]@{
-                Collection        = $collection.Name
-                CollState         = $collection.State
-                Project           = $project.Name
-                ProjectState      = $project.Status
-                LastCheckin       = $lastCheckin
-                LastUser          = $lastUser
-                LatestVersionSize = $latestVersionSize
-                BiggestFileSize   = $biggestFileSize
-                BiggestFile       = $biggestFileName
+                Collection          = $collection.Name
+                CollState           = $collection.State
+                Project             = $project.Name
+                ProjectState        = $project.Status
+                LastCheckin         = $lastCheckin
+                LastUser            = $lastUser
+                LastUserDisplayName = $lastUserDisplayName
+                LastUserMailAddress = $lastUserMailAddress
+                LastUserUniqueName  = $lastUserUniqueName
+                Members             = $members
+                MembersDisplayName  = $membersDisplayName
+                MembersMailAddress  = $membersMailAddress
+                MembersUniqueName   = $membersUniqueName
+                LatestVersionSize   = $latestVersionSize
+                BiggestFileSize     = $biggestFileSize
+                BiggestFile         = $biggestFileName
             }
         }
     }
     catch {
         $results += [PSCustomObject]@{
-            Collection        = $collection.Name
-            CollState         = $collection.State
-            Project           = "ERROR: $($_.Exception.Message)"
-            ProjectState      = "-"
-            LastCheckin       = "-"
-            LastUser          = "-"
-            LatestVersionSize = "-"
-            BiggestFileSize   = "-"
-            BiggestFile       = "-"
+            Collection          = $collection.Name
+            CollState           = $collection.State
+            Project             = "ERROR: $($_.Exception.Message)"
+            ProjectState        = "-"
+            LastCheckin         = "-"
+            LastUser            = "-"
+            LastUserDisplayName = "-"
+            LastUserMailAddress = "-"
+            LastUserUniqueName  = "-"
+            Members             = "-"
+            MembersDisplayName  = "-"
+            MembersMailAddress  = "-"
+            MembersUniqueName   = "-"
+            LatestVersionSize   = "-"
+            BiggestFileSize     = "-"
+            BiggestFile         = "-"
         }
     }
 }
@@ -197,7 +269,7 @@ foreach ($collection in $collections) {
 Write-Host "`nDone.`n" -ForegroundColor Green
 
 # ─── Display as table ──────────────────────────────────────────────────────────
-$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LatestVersionSize, BiggestFileSize, BiggestFile
+$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, LastUserUniqueName, Members, MembersDisplayName, MembersMailAddress, MembersUniqueName, LatestVersionSize, BiggestFileSize, BiggestFile
 
 # Optional: export to CSV
-#$results | Export-Csv -Path "C:\Users\José\Documents\tfs_projects_report.csv" -NoTypeInformation -Encoding UTF8
+# $results | Export-Csv -Path "C:\tfs_projects_report.csv" -NoTypeInformation -Encoding UTF8
