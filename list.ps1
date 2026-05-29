@@ -8,6 +8,7 @@ param(
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Client")
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Common")
 [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.VersionControl.Client")
+[void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Build.Client")
 
 # ─── Helper: format bytes into human-readable size ────────────────────────────
 function Format-Bytes {
@@ -39,20 +40,25 @@ foreach ($collection in $collections) {
     try {
         if ($collection.State -ne "Started") {
             $results += [PSCustomObject]@{
-                Collection          = $collection.Name
-                CollState           = $collection.State
-                Project             = "(Collection not started)"
-                ProjectState        = "-"
-                LastCheckin         = "-"
-                LastUser            = "-"
-                LastUserDisplayName = "-"
-                LastUserMailAddress = "-"
-                Members             = "-"
-                MembersDisplayName  = "-"
-                MembersMailAddress  = "-"
-                LatestVersionSize   = "-"
-                BiggestFileSize     = "-"
-                BiggestFile         = "-"
+                Collection                = $collection.Name
+                CollState                 = $collection.State
+                Project                   = "(Collection not started)"
+                ProjectState              = "-"
+                LastCheckin               = "-"
+                LastUser                  = "-"
+                LastUserDisplayName       = "-"
+                LastUserMailAddress       = "-"
+                ChangesetCount            = "-"
+                ChangesetUsers            = "-"
+                ChangesetUsersDisplayName = "-"
+                ChangesetUsersMailAddress = "-"
+                Members                   = "-"
+                MembersDisplayName        = "-"
+                MembersMailAddress        = "-"
+                BuildDefinitionCount      = "-"
+                LatestVersionSize         = "-"
+                BiggestFileSize           = "-"
+                BiggestFile               = "-"
             }
             continue
         }
@@ -67,39 +73,50 @@ foreach ($collection in $collections) {
         $projects        = $cssService.ListAllProjects()
         $vcs             = $tfsCollection.GetService([Microsoft.TeamFoundation.VersionControl.Client.VersionControlServer])
         $securityService = $tfsCollection.GetService([Microsoft.TeamFoundation.Server.IGroupSecurityService])
+        $buildService    = $tfsCollection.GetService([Microsoft.TeamFoundation.Build.Client.IBuildServer])
 
         if ($projects.Count -eq 0) {
             $results += [PSCustomObject]@{
-                Collection          = $collection.Name
-                CollState           = $collection.State
-                Project             = "(No projects found)"
-                ProjectState        = "-"
-                LastCheckin         = "-"
-                LastUser            = "-"
-                LastUserDisplayName = "-"
-                LastUserMailAddress = "-"
-                Members             = "-"
-                MembersDisplayName  = "-"
-                MembersMailAddress  = "-"
-                LatestVersionSize   = "-"
-                BiggestFileSize     = "-"
-                BiggestFile         = "-"
+                Collection                = $collection.Name
+                CollState                 = $collection.State
+                Project                   = "(No projects found)"
+                ProjectState              = "-"
+                LastCheckin               = "-"
+                LastUser                  = "-"
+                LastUserDisplayName       = "-"
+                LastUserMailAddress       = "-"
+                ChangesetCount            = "-"
+                ChangesetUsers            = "-"
+                ChangesetUsersDisplayName = "-"
+                ChangesetUsersMailAddress = "-"
+                Members                   = "-"
+                MembersDisplayName        = "-"
+                MembersMailAddress        = "-"
+                BuildDefinitionCount      = "-"
+                LatestVersionSize         = "-"
+                BiggestFileSize           = "-"
+                BiggestFile               = "-"
             }
             continue
         }
 
         foreach ($project in $projects) {
-            $projectPath         = "$/" + $project.Name
-            $lastCheckin         = "-"
-            $lastUser            = "-"
-            $lastUserDisplayName = "-"
-            $lastUserMailAddress = "-"
-            $members             = "-"
-            $membersDisplayName  = "-"
-            $membersMailAddress  = "-"
-            $latestVersionSize   = "-"
-            $biggestFileName     = "-"
-            $biggestFileSize     = "-"
+            $projectPath               = "$/" + $project.Name
+            $lastCheckin               = "-"
+            $lastUser                  = "-"
+            $lastUserDisplayName       = "-"
+            $lastUserMailAddress       = "-"
+            $changesetCount            = "-"
+            $changesetUsers            = "-"
+            $changesetUsersDisplayName = "-"
+            $changesetUsersMailAddress = "-"
+            $members                   = "-"
+            $membersDisplayName        = "-"
+            $membersMailAddress        = "-"
+            $buildDefinitionCount      = "-"
+            $latestVersionSize         = "-"
+            $biggestFileName           = "-"
+            $biggestFileSize           = "-"
 
             Write-Host "  -> $($project.Name)" -ForegroundColor Gray
 
@@ -137,6 +154,50 @@ foreach ($collection in $collections) {
                 $lastUser            = "Error"
                 $lastUserDisplayName = "Error"
                 $lastUserMailAddress = "Error"
+            }
+
+            # ── Changeset count + unique committers ────────────────────────────
+            try {
+                $allChangesets = $vcs.QueryHistory(
+                    $projectPath,
+                    [Microsoft.TeamFoundation.VersionControl.Client.VersionSpec]::Latest,
+                    0,
+                    [Microsoft.TeamFoundation.VersionControl.Client.RecursionType]::Full,
+                    $null, $null, $null,
+                    [int]::MaxValue,
+                    $false,
+                    $false
+                )
+
+                # Materialize enumerator so we can reuse the list
+                $changesetList  = $allChangesets | ForEach-Object { $_ }
+                $changesetCount = ($changesetList | Measure-Object).Count
+
+                # Unique committers — account name and display name are on the changeset directly
+                $uniqueCommitters = $changesetList | Sort-Object Committer -Unique
+
+                $changesetUsers            = ($uniqueCommitters | ForEach-Object { $_.Committer            } | Sort-Object -Unique) -join ", "
+                $changesetUsersDisplayName = ($uniqueCommitters | ForEach-Object { $_.CommitterDisplayName } | Sort-Object -Unique) -join ", "
+
+                # Mail address requires an identity lookup per unique committer
+                $mailAddresses = @()
+                foreach ($committer in $uniqueCommitters) {
+                    $identity = $securityService.ReadIdentity(
+                        [Microsoft.TeamFoundation.Server.SearchFactor]::AccountName,
+                        $committer.Committer,
+                        [Microsoft.TeamFoundation.Server.QueryMembership]::None
+                    )
+                    if ($identity -and $identity.MailAddress) {
+                        $mailAddresses += $identity.MailAddress
+                    }
+                }
+                $changesetUsersMailAddress = if ($mailAddresses.Count -gt 0) { ($mailAddresses | Sort-Object -Unique) -join ", " } else { "(none)" }
+            }
+            catch {
+                $changesetCount            = "Error: $($_.Exception.Message)"
+                $changesetUsers            = "Error"
+                $changesetUsersDisplayName = "Error"
+                $changesetUsersMailAddress = "Error"
             }
 
             # ── Project members ────────────────────────────────────────────────
@@ -178,6 +239,15 @@ foreach ($collection in $collections) {
                 $membersMailAddress = "Error"
             }
 
+            # ── Build definition count ─────────────────────────────────────────
+            try {
+                $buildDefinitions     = $buildService.QueryBuildDefinitions($project.Name)
+                $buildDefinitionCount = $buildDefinitions.Count
+            }
+            catch {
+                $buildDefinitionCount = "Error: $($_.Exception.Message)"
+            }
+
             # ── Project size + biggest file ────────────────────────────────────
             if ($SkipSize) {
                 $latestVersionSize = "Skipped"
@@ -213,39 +283,49 @@ foreach ($collection in $collections) {
             }
 
             $results += [PSCustomObject]@{
-                Collection          = $collection.Name
-                CollState           = $collection.State
-                Project             = $project.Name
-                ProjectState        = $project.Status
-                LastCheckin         = $lastCheckin
-                LastUser            = $lastUser
-                LastUserDisplayName = $lastUserDisplayName
-                LastUserMailAddress = $lastUserMailAddress
-                Members             = $members
-                MembersDisplayName  = $membersDisplayName
-                MembersMailAddress  = $membersMailAddress
-                LatestVersionSize   = $latestVersionSize
-                BiggestFileSize     = $biggestFileSize
-                BiggestFile         = $biggestFileName
+                Collection                = $collection.Name
+                CollState                 = $collection.State
+                Project                   = $project.Name
+                ProjectState              = $project.Status
+                LastCheckin               = $lastCheckin
+                LastUser                  = $lastUser
+                LastUserDisplayName       = $lastUserDisplayName
+                LastUserMailAddress       = $lastUserMailAddress
+                ChangesetCount            = $changesetCount
+                ChangesetUsers            = $changesetUsers
+                ChangesetUsersDisplayName = $changesetUsersDisplayName
+                ChangesetUsersMailAddress = $changesetUsersMailAddress
+                Members                   = $members
+                MembersDisplayName        = $membersDisplayName
+                MembersMailAddress        = $membersMailAddress
+                BuildDefinitionCount      = $buildDefinitionCount
+                LatestVersionSize         = $latestVersionSize
+                BiggestFileSize           = $biggestFileSize
+                BiggestFile               = $biggestFileName
             }
         }
     }
     catch {
         $results += [PSCustomObject]@{
-            Collection          = $collection.Name
-            CollState           = $collection.State
-            Project             = "ERROR: $($_.Exception.Message)"
-            ProjectState        = "-"
-            LastCheckin         = "-"
-            LastUser            = "-"
-            LastUserDisplayName = "-"
-            LastUserMailAddress = "-"
-            Members             = "-"
-            MembersDisplayName  = "-"
-            MembersMailAddress  = "-"
-            LatestVersionSize   = "-"
-            BiggestFileSize     = "-"
-            BiggestFile         = "-"
+            Collection                = $collection.Name
+            CollState                 = $collection.State
+            Project                   = "ERROR: $($_.Exception.Message)"
+            ProjectState              = "-"
+            LastCheckin               = "-"
+            LastUser                  = "-"
+            LastUserDisplayName       = "-"
+            LastUserMailAddress       = "-"
+            ChangesetCount            = "-"
+            ChangesetUsers            = "-"
+            ChangesetUsersDisplayName = "-"
+            ChangesetUsersMailAddress = "-"
+            Members                   = "-"
+            MembersDisplayName        = "-"
+            MembersMailAddress        = "-"
+            BuildDefinitionCount      = "-"
+            LatestVersionSize         = "-"
+            BiggestFileSize           = "-"
+            BiggestFile               = "-"
         }
     }
 }
@@ -253,7 +333,7 @@ foreach ($collection in $collections) {
 Write-Host "`nDone.`n" -ForegroundColor Green
 
 # ─── Display as table ──────────────────────────────────────────────────────────
-$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, Members, MembersDisplayName, MembersMailAddress, LatestVersionSize, BiggestFileSize, BiggestFile
+$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, ChangesetCount, ChangesetUsers, ChangesetUsersDisplayName, ChangesetUsersMailAddress, Members, MembersDisplayName, MembersMailAddress, BuildDefinitionCount, LatestVersionSize, BiggestFileSize, BiggestFile
 
 # Optional: export to CSV
 # $results | Export-Csv -Path "C:\tfs_projects_report.csv" -NoTypeInformation -Encoding UTF8
