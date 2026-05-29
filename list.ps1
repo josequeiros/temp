@@ -43,7 +43,10 @@ foreach ($collection in $collections) {
                 Collection                = $collection.Name
                 CollState                 = $collection.State
                 Project                   = "(Collection not started)"
+                ProjectUri                = "-"
+                ProjectGuid               = "-"
                 ProjectState              = "-"
+                Description               = "-"
                 LastCheckin               = "-"
                 LastUser                  = "-"
                 LastUserDisplayName       = "-"
@@ -56,6 +59,7 @@ foreach ($collection in $collections) {
                 MembersDisplayName        = "-"
                 MembersMailAddress        = "-"
                 BuildDefinitionCount      = "-"
+                LatestBuildDate           = "-"
                 LatestVersionSize         = "-"
                 BiggestFileSize           = "-"
                 BiggestFile               = "-"
@@ -80,7 +84,10 @@ foreach ($collection in $collections) {
                 Collection                = $collection.Name
                 CollState                 = $collection.State
                 Project                   = "(No projects found)"
+                ProjectUri                = "-"
+                ProjectGuid               = "-"
                 ProjectState              = "-"
+                Description               = "-"
                 LastCheckin               = "-"
                 LastUser                  = "-"
                 LastUserDisplayName       = "-"
@@ -93,6 +100,7 @@ foreach ($collection in $collections) {
                 MembersDisplayName        = "-"
                 MembersMailAddress        = "-"
                 BuildDefinitionCount      = "-"
+                LatestBuildDate           = "-"
                 LatestVersionSize         = "-"
                 BiggestFileSize           = "-"
                 BiggestFile               = "-"
@@ -102,6 +110,9 @@ foreach ($collection in $collections) {
 
         foreach ($project in $projects) {
             $projectPath               = "$/" + $project.Name
+            $projectUri                = $project.Uri
+            $projectGuid               = $project.Uri.Split('/')[-1]
+            $projectDescription        = if ($project.Description) { $project.Description } else { "(none)" }
             $lastCheckin               = "-"
             $lastUser                  = "-"
             $lastUserDisplayName       = "-"
@@ -114,6 +125,7 @@ foreach ($collection in $collections) {
             $membersDisplayName        = "-"
             $membersMailAddress        = "-"
             $buildDefinitionCount      = "-"
+            $latestBuildDate           = "-"
             $latestVersionSize         = "-"
             $biggestFileName           = "-"
             $biggestFileSize           = "-"
@@ -239,13 +251,28 @@ foreach ($collection in $collections) {
                 $membersMailAddress = "Error"
             }
 
-            # ── Build definition count ─────────────────────────────────────────
+            # ── Build definition count + latest build date ─────────────────────
             try {
                 $buildDefinitions     = $buildService.QueryBuildDefinitions($project.Name)
                 $buildDefinitionCount = $buildDefinitions.Count
+
+                if ($buildDefinitionCount -gt 0) {
+                    $buildSpec                        = $buildService.CreateBuildDetailSpec($project.Name)
+                    $buildSpec.MaxBuildsPerDefinition = 1
+                    $buildSpec.QueryOrder             = [Microsoft.TeamFoundation.Build.Client.BuildQueryOrder]::FinishTimeDescending
+                    $buildSpec.Status                 = [Microsoft.TeamFoundation.Build.Client.BuildStatus]::All
+
+                    $buildResults = $buildService.QueryBuilds($buildSpec)
+                    $latestBuild  = $buildResults.Builds | Sort-Object FinishTime -Descending | Select-Object -First 1
+
+                    if ($latestBuild -and $latestBuild.FinishTime -gt [DateTime]::MinValue) {
+                        $latestBuildDate = $latestBuild.FinishTime.ToString("yyyy-MM-dd HH:mm")
+                    }
+                }
             }
             catch {
                 $buildDefinitionCount = "Error: $($_.Exception.Message)"
+                $latestBuildDate      = "Error"
             }
 
             # ── Project size + biggest file ────────────────────────────────────
@@ -288,7 +315,10 @@ foreach ($collection in $collections) {
                 Collection                = $collection.Name
                 CollState                 = $collection.State
                 Project                   = $project.Name
+                ProjectUri                = $projectUri
+                ProjectGuid               = $projectGuid
                 ProjectState              = $project.Status
+                Description               = $projectDescription
                 LastCheckin               = $lastCheckin
                 LastUser                  = $lastUser
                 LastUserDisplayName       = $lastUserDisplayName
@@ -301,6 +331,7 @@ foreach ($collection in $collections) {
                 MembersDisplayName        = $membersDisplayName
                 MembersMailAddress        = $membersMailAddress
                 BuildDefinitionCount      = $buildDefinitionCount
+                LatestBuildDate           = $latestBuildDate
                 LatestVersionSize         = $latestVersionSize
                 BiggestFileSize           = $biggestFileSize
                 BiggestFile               = $biggestFileName
@@ -313,7 +344,10 @@ foreach ($collection in $collections) {
             Collection                = $collection.Name
             CollState                 = $collection.State
             Project                   = "ERROR: $($_.Exception.Message)"
+            ProjectUri                = "-"
+            ProjectGuid               = "-"
             ProjectState              = "-"
+            Description               = "-"
             LastCheckin               = "-"
             LastUser                  = "-"
             LastUserDisplayName       = "-"
@@ -326,6 +360,7 @@ foreach ($collection in $collections) {
             MembersDisplayName        = "-"
             MembersMailAddress        = "-"
             BuildDefinitionCount      = "-"
+            LatestBuildDate           = "-"
             LatestVersionSize         = "-"
             BiggestFileSize           = "-"
             BiggestFile               = "-"
@@ -336,7 +371,7 @@ foreach ($collection in $collections) {
 Write-Host "`n[$(Get-Date)] Done.`n" -ForegroundColor Green
 
 # ─── Display as table ──────────────────────────────────────────────────────────
-$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, ChangesetCount, ChangesetUsers, ChangesetUsersDisplayName, ChangesetUsersMailAddress, Members, MembersDisplayName, MembersMailAddress, BuildDefinitionCount, LatestVersionSize, BiggestFileSize, BiggestFile
+$results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectUri, ProjectGuid, ProjectState, Description, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, ChangesetCount, ChangesetUsers, ChangesetUsersDisplayName, ChangesetUsersMailAddress, Members, MembersDisplayName, MembersMailAddress, BuildDefinitionCount, LatestBuildDate, LatestVersionSize, BiggestFileSize, BiggestFile
 
 # Optional: export to CSV
 # $results | Export-Csv -Path "C:\tfs_projects_report.csv" -NoTypeInformation -Encoding UTF8
