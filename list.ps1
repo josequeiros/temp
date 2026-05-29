@@ -1,4 +1,4 @@
-﻿# ─── Parameters ───────────────────────────────────────────────────────────────
+# ─── Parameters ───────────────────────────────────────────────────────────────
 param(
     [string] $TfsServer = "http://your-tfs-server:8080/tfs",
     [switch] $SkipSize
@@ -20,7 +20,7 @@ function Format-Bytes {
 }
 
 # ─── Connect to TFS Configuration Server ──────────────────────────────────────
-Write-Host "Connecting to TFS: $TfsServer ..." -ForegroundColor Cyan
+Write-Host "[$(Get-Date)] Connecting to TFS: $TfsServer ..." -ForegroundColor Cyan
 $tfsConfigServer = New-Object Microsoft.TeamFoundation.Client.TfsConfigurationServer(
     (New-Object Uri($TfsServer))
 )
@@ -31,7 +31,7 @@ $collectionService = $tfsConfigServer.GetService([Microsoft.TeamFoundation.Frame
 $collections = $collectionService.GetCollections()
 
 if ($SkipSize) {
-    Write-Host "[-SkipSize] Project size calculation will be skipped.`n" -ForegroundColor Yellow
+    Write-Host "[$(Get-Date)] [-SkipSize] Project size calculation will be skipped.`n" -ForegroundColor Yellow
 }
 
 $results = @()
@@ -63,7 +63,7 @@ foreach ($collection in $collections) {
             continue
         }
 
-        Write-Host "Processing collection: $($collection.Name)" -ForegroundColor Cyan
+        Write-Host "[$(Get-Date)] Processing collection: $($collection.Name)" -ForegroundColor Cyan
 
         $collectionUri = New-Object Uri("$TfsServer/$($collection.Name)")
         $tfsCollection = [Microsoft.TeamFoundation.Client.TfsTeamProjectCollectionFactory]::GetTeamProjectCollection($collectionUri)
@@ -118,7 +118,7 @@ foreach ($collection in $collections) {
             $biggestFileName           = "-"
             $biggestFileSize           = "-"
 
-            Write-Host "  -> $($project.Name)" -ForegroundColor Gray
+            Write-Host "[$(Get-Date)]  -> $($project.Name)" -ForegroundColor Gray
 
             # ── Last check-in date + user info ─────────────────────────────────
             try {
@@ -266,13 +266,15 @@ foreach ($collection in $collections) {
 
                     # Total project size
                     $totalBytes        = ($files | Measure-Object -Property ContentLength -Sum).Sum
-                    $latestVersionSize = if ($totalBytes) { Format-Bytes $totalBytes } else { "0 B" }
+                    #$latestVersionSize = if ($totalBytes) { Format-Bytes $totalBytes } else { "0 B" }
+                    $latestVersionSize = if ($totalBytes) { $totalBytes } else { 0 }
 
                     # Biggest file
                     $biggestFile = $files | Sort-Object ContentLength -Descending | Select-Object -First 1
                     if ($biggestFile) {
                         $biggestFileName = [System.IO.Path]::GetFileName($biggestFile.ServerItem)
-                        $biggestFileSize = Format-Bytes $biggestFile.ContentLength
+                        #$biggestFileSize = Format-Bytes $biggestFile.ContentLength
+                        $biggestFileSize = $biggestFile.ContentLength
                     }
                 }
                 catch {
@@ -303,6 +305,7 @@ foreach ($collection in $collections) {
                 BiggestFileSize           = $biggestFileSize
                 BiggestFile               = $biggestFileName
             }
+            Write-Host $($results[-1])
         }
     }
     catch {
@@ -330,7 +333,7 @@ foreach ($collection in $collections) {
     }
 }
 
-Write-Host "`nDone.`n" -ForegroundColor Green
+Write-Host "`n[$(Get-Date)] Done.`n" -ForegroundColor Green
 
 # ─── Display as table ──────────────────────────────────────────────────────────
 $results | Format-Table -AutoSize -Property Collection, CollState, Project, ProjectState, LastCheckin, LastUser, LastUserDisplayName, LastUserMailAddress, ChangesetCount, ChangesetUsers, ChangesetUsersDisplayName, ChangesetUsersMailAddress, Members, MembersDisplayName, MembersMailAddress, BuildDefinitionCount, LatestVersionSize, BiggestFileSize, BiggestFile
